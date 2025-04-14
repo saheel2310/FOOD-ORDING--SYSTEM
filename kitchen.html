@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kitchen Display</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #1a1a1a;
+            color: white;
+        }
+        .order-item {
+            transition: all 0.3s ease;
+        }
+        .order-item:hover {
+            transform: scale(1.02);
+        }
+        .new-order {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 165, 0, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 165, 0, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 165, 0, 0); }
+        }
+    </style>
+</head>
+<body class="min-h-screen p-6">
+    <div class="max-w-6xl mx-auto">
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold text-orange-500">Kitchen Display</h1>
+            <div class="text-xl">
+                <span class="text-gray-400">Total Active Orders:</span>
+                <span id="totalOrders" class="font-bold text-orange-500">0</span>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="ordersGrid">
+            <!-- Orders will be loaded here -->
+        </div>
+    </div>
+
+    <script>
+        let lastUpdateTime = null;
+        let processedOrders = new Set();
+
+        async function fetchKitchenOrders() {
+            try {
+                const response = await fetch('http://localhost:5000/api/kitchen/orders');
+                if (!response.ok) throw new Error('Failed to fetch orders');
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Error fetching orders:', error);
+                return { grouped_items: {}, total_orders: 0 };
+            }
+        }
+
+        async function updateOrderStatus(orderId, status) {
+            try {
+                const response = await fetch(`http://localhost:5000/api/orders/${orderId}/status`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ status })
+                });
+                if (!response.ok) throw new Error('Failed to update status');
+            } catch (error) {
+                console.error('Error updating order status:', error);
+            }
+        }
+
+        function renderOrders(data) {
+            const ordersGrid = document.getElementById('ordersGrid');
+            const totalOrdersSpan = document.getElementById('totalOrders');
+            
+            totalOrdersSpan.textContent = data.total_orders;
+            
+            ordersGrid.innerHTML = Object.values(data.grouped_items)
+                .sort((a, b) => b.count - a.count)
+                .map(item => {
+                    const isNew = item.orders.some(order => !processedOrders.has(order.order_id));
+                    if (isNew) {
+                        item.orders.forEach(order => processedOrders.add(order.order_id));
+                    }
+                    
+                    return `
+                        <div class="order-item bg-gray-800 rounded-lg p-4 ${isNew ? 'new-order' : ''}">
+                            <div class="flex justify-between items-start mb-2">
+                                <h3 class="text-xl font-semibold text-orange-500">${item.name}</h3>
+                                <span class="text-2xl font-bold text-white">x${item.count}</span>
+                            </div>
+                            <div class="space-y-2">
+                                ${item.orders.map(order => `
+                                    <div class="flex justify-between items-center text-sm">
+                                        <span class="text-gray-400">Order #${order.order_id}</span>
+                                        <span class="text-gray-500">${order.timestamp}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            <div class="mt-4 flex justify-end space-x-2">
+                                <button onclick="markAsPreparing(${JSON.stringify(item.order_ids)})" 
+                                    class="bg-orange-500 hover:bg-orange-600 text-white px-3 py-1 rounded text-sm">
+                                    Mark as Preparing
+                                </button>
+                                <button onclick="markAsCompleted(${JSON.stringify(item.order_ids)})" 
+                                    class="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm">
+                                    Mark as Completed
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+        }
+
+        async function markAsPreparing(orderIds) {
+            for (const orderId of orderIds) {
+                await updateOrderStatus(orderId, 'preparing');
+            }
+            updateDisplay();
+        }
+
+        async function markAsCompleted(orderIds) {
+            for (const orderId of orderIds) {
+                await updateOrderStatus(orderId, 'completed');
+            }
+            updateDisplay();
+        }
+
+        async function updateDisplay() {
+            const data = await fetchKitchenOrders();
+            renderOrders(data);
+        }
+
+        // Update display every 5 seconds
+        setInterval(updateDisplay, 5000);
+        
+        // Initial load
+        updateDisplay();
+    </script>
+</body>
+</html> 
